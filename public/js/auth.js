@@ -1,86 +1,33 @@
-/**
- * public/js/auth.js
- * Gestion de l'authentification côté client.
- * Compatible avec les endpoints /api/auth/*
- */
-
 import api from './api.js';
 
-const STORAGE_KEY = 'bank_user';
-
 const auth = {
-    /**
-     * Connexion utilisateur
-     * POST /api/auth/login
-     */
-    async login(username, password) {
-        const data = await api.auth.login({ username, password });
-
-        // Sauvegarde session côté frontend
-        if (data && data.user) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(data.user));
-        }
-
-        return data;
+    async login(identifier, password) {
+        const res = await api.auth.login(identifier, password);
+        localStorage.setItem('user', JSON.stringify(res.user));
+        return res.user;
     },
 
-    /**
-     * Inscription utilisateur
-     * POST /api/auth/register
-     */
-    async register(userData) {
-        return await api.auth.register(userData);
+    async register(data) {
+        const res = await api.auth.register(data);
+        localStorage.setItem('user', JSON.stringify(res.user));
+        return res.user;
     },
 
-    /**
-     * Déconnexion utilisateur
-     * POST /api/auth/logout
-     */
     async logout() {
-        try {
-            await api.auth.logout();
-        } finally {
-            localStorage.removeItem(STORAGE_KEY);
-            window.location.href = '/login.html';
-        }
+        await api.auth.logout();
+        localStorage.removeItem('user');
+        window.location.href = '/login.html';
     },
 
-    /**
-     * Récupère l'utilisateur connecté depuis le backend
-     * GET /api/auth/me
-     */
-    async getMe() {
+    async me() {
         try {
-            const data = await api.auth.me();
-
-            // Synchronise localStorage avec backend
-            if (data) {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-            }
-
-            return data;
-        } catch (error) {
-            localStorage.removeItem(STORAGE_KEY);
-            return null;
-        }
-    },
-
-    /**
-     * Récupère l'utilisateur depuis localStorage (rapide, non fiable)
-     */
-    getLocalUser() {
-        try {
-            return JSON.parse(localStorage.getItem(STORAGE_KEY));
+            const res = await api.auth.me();
+            localStorage.setItem('user', JSON.stringify(res.user));
+            return res.user;
         } catch {
+            localStorage.removeItem('user');
             return null;
         }
-    },
-
-    /**
-     * Vérifie si l'utilisateur est connecté (côté frontend uniquement)
-     */
-    isAuthenticated() {
-        return !!localStorage.getItem(STORAGE_KEY);
     }
 };
 
