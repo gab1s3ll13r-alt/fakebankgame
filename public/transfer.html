@@ -1,0 +1,25 @@
+<h2>Virement</h2>
+
+<input id="recipientId" placeholder="ID utilisateur">
+<input id="amount" placeholder="Montant (€)">
+<input id="desc" placeholder="Description">
+
+<button onclick="send()">Envoyer</button>
+
+<script type="module">
+import { TxAPI } from "/assets/api.js";
+
+window.send = async () => {
+  try {
+    const recipientId = document.getElementById("recipientId").value;
+    const amount = document.getElementById("amount").value;
+    const description = document.getElementById("desc").value;
+
+    const res = await TxAPI.transfer(recipientId, amount, description);
+    alert("Virement OK : " + res.message);
+
+  } catch (e) {
+    alert(e.error || "Erreur");
+  }
+};
+</script>
