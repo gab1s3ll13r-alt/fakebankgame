@@ -1,128 +1,55 @@
-/**
- * public/js/api.js
- * Client API centralisé (compatible express-session cookie auth)
- */
+const API_BASE = "/api";
 
-const API_BASE = '/api';
+async function request(url, method = "GET", body = null) {
+  const res = await fetch(API_BASE + url, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: body ? JSON.stringify(body) : null,
+  });
 
-async function request(endpoint, options = {}) {
-    const url = `${API_BASE}${endpoint}`;
-
-    const config = {
-        method: options.method || 'GET',
-        headers: {
-            'Content-Type': 'application/json',
-            ...(options.headers || {})
-        },
-        credentials: 'include', // 🔥 IMPORTANT (sessions backend)
-    };
-
-    if (options.body) {
-        config.body = options.body;
-    }
-
-    const res = await fetch(url, config);
-
-    let data;
-    try {
-        data = await res.json();
-    } catch {
-        throw { error: 'Réponse invalide du serveur' };
-    }
-
-    if (!res.ok) {
-        throw data;
-    }
-
-    return data;
+  const data = await res.json();
+  if (!res.ok) throw data;
+  return data;
 }
 
-const api = {
-    request,
+// Auth
+export const AuthAPI = {
+  login: (identifier, password) =>
+    request("/auth/login", "POST", { identifier, password }),
 
-    auth: {
-        login: (identifier, password) =>
-            request('/auth/login', {
-                method: 'POST',
-                body: JSON.stringify({ identifier, password })
-            }),
+  register: (data) =>
+    request("/auth/register", "POST", data),
 
-        register: (data) =>
-            request('/auth/register', {
-                method: 'POST',
-                body: JSON.stringify(data)
-            }),
+  me: () =>
+    request("/auth/me"),
 
-        logout: () =>
-            request('/auth/logout', { method: 'POST' }),
-
-        me: () =>
-            request('/auth/me')
-    },
-
-    users: {
-        search: (q) =>
-            request(`/users/search?q=${encodeURIComponent(q)}`),
-
-        lookup: (iban) =>
-            request(`/users/lookup?iban=${encodeURIComponent(iban)}`)
-    },
-
-    transactions: {
-        transfer: (recipientId, amount, description) =>
-            request('/transactions/transfer', {
-                method: 'POST',
-                body: JSON.stringify({ recipientId, amount, description })
-            }),
-
-        history: (page = 1, limit = 20) =>
-            request(`/transactions/history?page=${page}&limit=${limit}`),
-
-        get: (id) =>
-            request(`/transactions/${id}`),
-
-        summary: (days = 14) =>
-            request(`/transactions/summary?days=${days}`)
-    },
-
-    tpe: {
-        requestPayment: (amount, label, description) =>
-            request('/tpe/request', {
-                method: 'POST',
-                body: JSON.stringify({ amount, label, description })
-            }),
-
-        getPayment: (uuid) =>
-            request(`/tpe/pay/${uuid}`),
-
-        pay: (uuid) =>
-            request(`/tpe/pay/${uuid}`, { method: 'POST' }),
-
-        cancel: (uuid) =>
-            request(`/tpe/cancel/${uuid}`, { method: 'POST' }),
-
-        history: (page = 1) =>
-            request(`/tpe/history?page=${page}`),
-
-        pending: () =>
-            request('/tpe/pending')
-    },
-
-    account: {
-        notifications: () =>
-            request('/account/notifications'),
-
-        read: (id) =>
-            request(`/account/notifications/${id}/read`, { method: 'POST' }),
-
-        readAll: () =>
-            request('/account/notifications/read-all', { method: 'POST' })
-    },
-
-    admin: {
-        stats: () =>
-            request('/admin/stats')
-    }
+  logout: () =>
+    request("/auth/logout", "POST"),
 };
 
-export default api;
+// Account
+export const AccountAPI = {
+  get: () => request("/account"),
+  balance: () => request("/account/balance"),
+  profile: () => request("/account/profile"),
+  updateProfile: (data) =>
+    request("/account/profile", "PUT", data),
+
+  notifications: () => request("/account/notifications"),
+};
+
+// Transactions
+export const TxAPI = {
+  transfer: (recipientId, amount, description) =>
+    request("/transactions/transfer", "POST", {
+      recipientId,
+      amount,
+      description,
+    }),
+
+  history: (page = 1) =>
+    request(`/transactions/history?page=${page}`),
+};
