@@ -1,0 +1,71 @@
+<!-- =========================================================
+public/index.html
+Page d’accueil publique
+========================================================= -->
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Banque RP</title>
+
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/components.css" />
+  <link rel="stylesheet" href="/css/auth.css" />
+
+  <script>
+    // Redirection si déjà connecté
+    (async function () {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
+        if (res.ok) {
+          window.location.href = '/dashboard.html';
+        }
+      } catch (e) {}
+    })();
+  </script>
+
+  <script src="/js/theme.js"></script>
+</head>
+
+<body>
+  <div class="landing-container">
+
+    <header class="landing-header">
+      <h1>Banque RP</h1>
+      <p>Simulation bancaire pour jeu de rôle</p>
+    </header>
+
+    <main class="landing-main">
+      <div class="hero-card">
+        <h2>Bienvenue</h2>
+        <p>Gère ton argent, tes virements et tes commerces dans une banque RP complète.</p>
+
+        <div class="landing-actions">
+          <a class="btn primary" href="/login.html">Se connecter</a>
+          <a class="btn secondary" href="/register.html">Créer un compte</a>
+        </div>
+      </div>
+
+      <div class="info-card">
+        <h3>Fonctionnalités</h3>
+        <ul>
+          <li>Virements instantanés</li>
+          <li>Système TPE commerçant</li>
+          <li>Banque RP multi-rôles</li>
+          <li>Administration complète</li>
+        </ul>
+      </div>
+
+      <div class="warning-card">
+        <p>Ce projet est une simulation fictive destinée au roleplay uniquement.</p>
+      </div>
+    </main>
+
+    <footer class="landing-footer">
+      <button onclick="toggleTheme()">Changer thème</button>
+    </footer>
+
+  </div>
+</body>
+</html>
