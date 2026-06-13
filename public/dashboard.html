@@ -1,62 +1,126 @@
+<!-- =========================================================
+public/dashboard.html
+Tableau de bord principal
+========================================================= -->
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 <head>
-  <title>Banque RP - Dashboard</title>
-  <link rel="stylesheet" href="/assets/style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard - Banque RP</title>
+
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/components.css" />
+  <link rel="stylesheet" href="/css/dashboard.css" />
+
+  <script src="/js/theme.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/js/dashboard.js"></script>
 </head>
+
 <body>
 
-  <div class="navbar">
-    <h2>💰 Banque RP</h2>
-    <button onclick="logout()">Déconnexion</button>
-  </div>
+<div class="app-layout">
 
-  <div id="app">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
 
-    <div class="card">
-      <h3>Solde</h3>
-      <div id="balance">Chargement...</div>
+    <div class="sidebar-header">
+      <h2>Banque RP</h2>
     </div>
 
-    <div class="grid">
-      <a href="/transfer.html">💸 Virement</a>
-      <a href="/transactions.html">📜 Historique</a>
-      <a href="/account.html">👤 Profil</a>
+    <nav class="sidebar-nav">
+      <a href="/dashboard.html" class="active">Dashboard</a>
+      <a href="/transfer.html">Virement</a>
+      <a href="/history.html">Historique</a>
+      <a href="/search.html">Recherche</a>
+      <a href="/tpe.html" id="tpeLink">TPE</a>
+      <a href="/employee.html" id="employeeLink">Employé</a>
+      <a href="/admin.html" id="adminLink">Admin</a>
+      <a href="/profile.html">Profil</a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <button onclick="API.auth.logout().then(()=>location.href='/login.html')">
+        Déconnexion
+      </button>
     </div>
 
-    <div class="card">
-      <h3>Notifications</h3>
-      <div id="notifications"></div>
-    </div>
+  </aside>
 
-  </div>
+  <!-- MAIN -->
+  <main class="main-content">
 
-  <script type="module">
-    import { AuthAPI, AccountAPI } from "/assets/api.js";
+    <!-- TOPBAR -->
+    <header class="topbar">
 
-    async function load() {
-      const me = await AuthAPI.me().catch(() => {
-        window.location.href = "/login.html";
-      });
+      <h1>Dashboard</h1>
 
-      const account = await AccountAPI.get();
-      document.getElementById("balance").innerText =
-        account.account.balance / 100 + " €";
+      <div class="topbar-actions">
+        <button onclick="toggleTheme()">🌓</button>
 
-      const notif = await AccountAPI.notifications();
-      document.getElementById("notifications").innerHTML =
-        notif.notifications.map(n =>
-          `<div class="notif">${n.title} - ${n.message}</div>`
-        ).join("");
-    }
+        <div class="notifications">
+          <button id="notifBtn">🔔</button>
+          <span id="notifBadge" class="badge"></span>
 
-    window.logout = async () => {
-      await AuthAPI.logout();
-      window.location.href = "/login.html";
-    };
+          <div id="notifPanel" class="notif-panel"></div>
+        </div>
 
-    load();
-  </script>
+      </div>
+
+    </header>
+
+    <!-- CONTENT -->
+    <section class="page-content">
+
+      <!-- SOLDE -->
+      <div class="balance-card">
+        <h2>Solde</h2>
+        <div class="balance-amount" id="balance">0 €</div>
+        <div class="iban" id="iban">IBAN</div>
+
+        <a class="btn primary" href="/transfer.html">
+          Faire un virement
+        </a>
+      </div>
+
+      <!-- STATS -->
+      <div class="stats-grid">
+
+        <div class="stat-card">
+          <h3>Reçus</h3>
+          <div id="received30d">0 €</div>
+        </div>
+
+        <div class="stat-card">
+          <h3>Envoyés</h3>
+          <div id="sent30d">0 €</div>
+        </div>
+
+        <div class="stat-card">
+          <h3>Transactions</h3>
+          <div id="tx30d">0</div>
+        </div>
+
+      </div>
+
+      <!-- CHART -->
+      <div class="chart-container">
+        <canvas id="chart"></canvas>
+      </div>
+
+      <!-- TRANSACTIONS -->
+      <div class="card">
+        <h3>Dernières transactions</h3>
+        <div id="lastTransactions"></div>
+      </div>
+
+    </section>
+
+  </main>
+
+</div>
 
 </body>
 </html>
