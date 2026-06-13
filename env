@@ -23,3 +23,5 @@ ADMIN_EMAIL=admin@banque-rp.local
 # Devise utilisee dans l'application (affichage uniquement)
 CURRENCY_SYMBOL=€
 CURRENCY_CODE=EUR
+
+ADMIN_CREATION_CODE=137658
