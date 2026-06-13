@@ -1,0 +1,25 @@
+# Configuration du serveur
+PORT=3000
+NODE_ENV=development
+
+# Secret de session (changez cette valeur pour votre partie)
+SESSION_SECRET=change-this-secret-key-banque-rp-jeu-de-role-2026
+
+# Configuration base de donnees
+DB_PATH=./database/banque.db
+SESSION_DB_PATH=./database/sessions.db
+
+# Configuration initiale
+# Nom de la premiere banque fictive creee automatiquement
+DEFAULT_BANK_NAME=Banque Centrale RP
+DEFAULT_BANK_CODE=BRP
+
+# Compte administrateur cree automatiquement au premier lancement
+# (changez ces identifiants avant le premier demarrage)
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=Admin1234!
+ADMIN_EMAIL=admin@banque-rp.local
+
+# Devise utilisee dans l'application (affichage uniquement)
+CURRENCY_SYMBOL=€
+CURRENCY_CODE=EUR
