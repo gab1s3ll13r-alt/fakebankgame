@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Banque RP - Dashboard</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+
+  <div class="navbar">
+    <h2>💰 Banque RP</h2>
+    <button onclick="logout()">Déconnexion</button>
+  </div>
+
+  <div id="app">
+
+    <div class="card">
+      <h3>Solde</h3>
+      <div id="balance">Chargement...</div>
+    </div>
+
+    <div class="grid">
+      <a href="/transfer.html">💸 Virement</a>
+      <a href="/transactions.html">📜 Historique</a>
+      <a href="/account.html">👤 Profil</a>
+    </div>
+
+    <div class="card">
+      <h3>Notifications</h3>
+      <div id="notifications"></div>
+    </div>
+
+  </div>
+
+  <script type="module">
+    import { AuthAPI, AccountAPI } from "/assets/api.js";
+
+    async function load() {
+      const me = await AuthAPI.me().catch(() => {
+        window.location.href = "/login.html";
+      });
+
+      const account = await AccountAPI.get();
+      document.getElementById("balance").innerText =
+        account.account.balance / 100 + " €";
+
+      const notif = await AccountAPI.notifications();
+      document.getElementById("notifications").innerHTML =
+        notif.notifications.map(n =>
+          `<div class="notif">${n.title} - ${n.message}</div>`
+        ).join("");
+    }
+
+    window.logout = async () => {
+      await AuthAPI.logout();
+      window.location.href = "/login.html";
+    };
+
+    load();
+  </script>
+
+</body>
+</html>
