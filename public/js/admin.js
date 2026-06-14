@@ -1,236 +1,186 @@
-// ============================================================
+ // ============================================================
 // public/js/admin.js
-// Interface administrateur complète
+// Interface administration banque
+// - Gestion utilisateurs
+// - Gestion rôles
+// - Activation / désactivation comptes
+// - Gestion TPE
+// - Statistiques simples
 // ============================================================
 
 (function () {
   'use strict';
 
-  let currentPage = 1;
+  // ----------------------------------------------------------
+  // DOM
+  // ----------------------------------------------------------
+  const dom = {
+    usersList: document.getElementById('usersList'),
+    searchInput: document.getElementById('searchUser'),
+
+    statsBox: document.getElementById('stats'),
+
+    roleSelect: document.getElementById('roleSelect'),
+    tpeToggle: document.getElementById('tpeToggle'),
+    tpeLabel: document.getElementById('tpeLabel'),
+
+    freezeBtn: document.getElementById('freezeBtn'),
+    deleteBtn: document.getElementById('deleteBtn'),
+  };
+
+  let selectedUser = null;
+  let searchTimeout = null;
 
   // ----------------------------------------------------------
-  // Vérification accès admin
+  // Utilitaire UI
   // ----------------------------------------------------------
-  async function checkAccess() {
-    const res = await window.API.auth.me();
+  function renderUser(user) {
+    const div = document.createElement('div');
+    div.className = 'user-item';
 
-    if (res.error) {
-      window.location.href = '/login.html';
-      return null;
-    }
+    div.innerHTML = `
+      <strong>${user.username}</strong>
+      <small>${user.email}</small>
+    `;
 
-    const user = res.data;
+    div.addEventListener('click', () => {
+      selectedUser = user;
+      loadUserPanel();
+    });
 
-    if (user.role !== 'admin') {
-      window.location.href = '/dashboard.html';
-      return null;
-    }
+    return div;
+  }
 
-    return user;
+  function setStats(stats) {
+    if (!dom.statsBox || !stats) return;
+
+    dom.statsBox.innerHTML = `
+      <div>Utilisateurs : ${stats.users}</div>
+      <div>Comptes : ${stats.accounts}</div>
+      <div>Transactions : ${stats.transactions}</div>
+    `;
   }
 
   // ----------------------------------------------------------
-  // Dashboard stats
+  // Recherche utilisateurs
+  // ----------------------------------------------------------
+  function initSearch() {
+    if (!dom.searchInput || !dom.usersList) return;
+
+    dom.searchInput.addEventListener('input', () => {
+      clearTimeout(searchTimeout);
+
+      const q = dom.searchInput.value.trim();
+
+      if (q.length < 2) {
+        dom.usersList.innerHTML = '';
+        return;
+      }
+
+      searchTimeout = setTimeout(async () => {
+        const res = await window.API.admin.getUsers({ q });
+
+        if (res.error) return;
+
+        dom.usersList.innerHTML = '';
+
+        (res.data.users || []).forEach((u) => {
+          dom.usersList.appendChild(renderUser(u));
+        });
+      }, 300);
+    });
+  }
+
+  // ----------------------------------------------------------
+  // Charger stats admin
   // ----------------------------------------------------------
   async function loadStats() {
     const res = await window.API.admin.getStats();
     if (res.error) return;
 
-    const stats = res.data;
-
-    const el = document.getElementById('adminStats');
-    if (!el) return;
-
-    el.innerHTML = `
-      <div>Utilisateurs: ${stats.users}</div>
-      <div>Transactions: ${stats.transactions}</div>
-      <div>Solde total: ${stats.totalBalance / 100} €</div>
-    `;
+    setStats(res.data);
   }
 
   // ----------------------------------------------------------
-  // Liste utilisateurs
+  // Panneau utilisateur sélectionné
   // ----------------------------------------------------------
-  function initUsersSearch() {
-    const input = document.getElementById('userSearch');
-    const roleFilter = document.getElementById('roleFilter');
-    const results = document.getElementById('usersTable');
+  function loadUserPanel() {
+    if (!selectedUser) return;
 
-    let timeout = null;
-
-    if (!input || !results) return;
-
-    async function loadUsers() {
-      const res = await window.API.admin.getUsers({
-        q: input.value,
-        role: roleFilter ? roleFilter.value : '',
-        page: currentPage,
-      });
-
-      if (res.error) return;
-
-      results.innerHTML = '';
-
-      res.data.users.forEach(u => {
-        const row = document.createElement('div');
-        row.className = 'user-row';
-
-        row.innerHTML = `
-          <div>${u.username}</div>
-          <div>${u.email}</div>
-          <div>${u.role}</div>
-          <div>${u.isActive ? 'Actif' : 'Bloqué'}</div>
-          <div>${u.balance / 100} €</div>
-          <button data-id="${u.id}" class="deleteBtn">Supprimer</button>
-        `;
-
-        results.appendChild(row);
-      });
-
-      initDeleteButtons();
-    }
-
-    input.addEventListener('input', () => {
-      clearTimeout(timeout);
-      timeout = setTimeout(loadUsers, 400);
-    });
-
-    if (roleFilter) {
-      roleFilter.addEventListener('change', loadUsers);
-    }
-
-    loadUsers();
+    if (dom.roleSelect) dom.roleSelect.value = selectedUser.role;
+    if (dom.tpeToggle) dom.tpeToggle.checked = !!selectedUser.hasTpe;
+    if (dom.tpeLabel) dom.tpeLabel.value = selectedUser.tpeLabel || '';
   }
 
   // ----------------------------------------------------------
-  // Supprimer utilisateur
+  // Modifier rôle
   // ----------------------------------------------------------
-  function initDeleteButtons() {
-    document.querySelectorAll('.deleteBtn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const id = btn.dataset.id;
+  function initRoleChange() {
+    if (!dom.roleSelect) return;
 
-        const confirm = window.confirm('Supprimer cet utilisateur ?');
-        if (!confirm) return;
+    dom.roleSelect.addEventListener('change', async () => {
+      if (!selectedUser) return;
 
-        const res = await window.API.admin.deleteUser(id);
-
-        if (res.error) return alert(res.error);
-
-        btn.parentElement.remove();
-      });
-    });
-  }
-
-  // ----------------------------------------------------------
-  // Freeze / unfreeze compte
-  // ----------------------------------------------------------
-  async function toggleFreeze(userId, isFrozen) {
-    const res = await window.API.admin.freezeAccount(userId, isFrozen);
-
-    if (res.error) return alert(res.error);
-
-    alert('Statut mis à jour');
-  }
-
-  // ----------------------------------------------------------
-  // Ajustement solde
-  // ----------------------------------------------------------
-  function initAdjustBalance() {
-    const form = document.getElementById('adjustForm');
-    if (!form) return;
-
-    form.addEventListener('submit', async e => {
-      e.preventDefault();
-
-      const userId = form.userId.value;
-      const amount = parseFloat(form.amount.value);
-      const reason = form.reason.value;
-
-      const res = await window.API.admin.adjustBalance(userId, {
-        amount: Math.round(amount * 100),
-        reason,
-      });
+      const res = await window.API.admin.setRole(
+        selectedUser.id,
+        dom.roleSelect.value
+      );
 
       if (res.error) return alert(res.error);
 
-      alert('Solde ajusté');
+      alert('Rôle mis à jour');
     });
   }
 
   // ----------------------------------------------------------
-  // Transactions admin
+  // Gestion TPE
   // ----------------------------------------------------------
-  function initTransactions() {
-    const container = document.getElementById('adminTransactions');
-    if (!container) return;
+  function initTpe() {
+    if (!dom.tpeToggle) return;
 
-    async function load() {
-      const res = await window.API.admin.getTransactions({
-        page: currentPage,
-      });
+    dom.tpeToggle.addEventListener('change', async () => {
+      if (!selectedUser) return;
 
-      if (res.error) return;
+      const res = await window.API.admin.setTpe(
+        selectedUser.id,
+        dom.tpeToggle.checked,
+        dom.tpeLabel?.value || ''
+      );
 
-      container.innerHTML = '';
+      if (res.error) return alert(res.error);
 
-      res.data.transactions.forEach(tx => {
-        const div = document.createElement('div');
-
-        div.innerHTML = `
-          <div>${tx.type}</div>
-          <div>${tx.amount / 100} €</div>
-          <div>${new Date(tx.created_at).toLocaleString()}</div>
-        `;
-
-        container.appendChild(div);
-      });
-    }
-
-    load();
+      alert('TPE mis à jour');
+    });
   }
 
   // ----------------------------------------------------------
-  // Logs système
+  // Freeze compte
   // ----------------------------------------------------------
-  function initLogs() {
-    const container = document.getElementById('adminLogs');
-    if (!container) return;
+  function initFreeze() {
+    if (!dom.freezeBtn) return;
 
-    async function load() {
-      const res = await window.API.admin.getLogs({ page: currentPage });
+    dom.freezeBtn.addEventListener('click', async () => {
+      if (!selectedUser) return;
 
-      if (res.error) return;
+      const res = await window.API.admin.setStatus(
+        selectedUser.id,
+        !selectedUser.isActive
+      );
 
-      container.innerHTML = '';
+      if (res.error) return alert(res.error);
 
-      res.data.logs.forEach(log => {
-        const div = document.createElement('div');
-
-        div.innerHTML = `
-          <div>${log.action}</div>
-          <div>${log.actor_user_id}</div>
-          <div>${new Date(log.created_at).toLocaleString()}</div>
-        `;
-
-        container.appendChild(div);
-      });
-    }
-
-    load();
+      alert('Statut utilisateur mis à jour');
+    });
   }
 
   // ----------------------------------------------------------
   // Init
   // ----------------------------------------------------------
-  document.addEventListener('DOMContentLoaded', async () => {
-    const user = await checkAccess();
-    if (!user) return;
-
+  document.addEventListener('DOMContentLoaded', () => {
+    initSearch();
+    initRoleChange();
+    initTpe();
+    initFreeze();
     loadStats();
-    initUsersSearch();
-    initAdjustBalance();
-    initTransactions();
-    initLogs();
   });
 })();
