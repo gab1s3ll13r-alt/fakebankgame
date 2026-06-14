@@ -1,37 +1,104 @@
-const express = require('express');
-const bcrypt = require('bcrypt');
+// ============================================================
+// routes/requests.js
+// Gestion des demandes bancaires utilisateurs
+// - Création de demande (crédit, TPE, support, autre)
+// - Consultation des demandes de l'utilisateur connecté
+// ============================================================
 
-const { db, createAccountForUser } = require('../database/db');
+const express = require('express');
+const { body, validationResult } = require('express-validator');
+
+const { db, logActivity } = require('../database/db');
+const { requireAuth } = require('../middleware/auth');
+const logger = require('../utils/logger');
 
 const router = express.Router();
 
-const BCRYPT_ROUNDS = 12;
+// ------------------------------------------------------------
+// POST /api/requests
+// Création d'une demande utilisateur
+// ------------------------------------------------------------
+router.post(
+  '/',
+  requireAuth,
+  [
+    body('type')
+      .isIn(['credit_request', 'tpe_request', 'support', 'other'])
+      .withMessage('Type de demande invalide.'),
+    body('subject')
+      .trim()
+      .isLength({ min: 3, max: 200 })
+      .withMessage('Sujet requis (3 à 200 caractères).'),
+    body('message')
+      .trim()
+      .isLength({ min: 5, max: 1000 })
+      .withMessage('Message requis (5 à 1000 caractères).'),
+  ],
+  (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: 'Validation échouée.', details: errors.array() });
+    }
 
-// POST /api/setup/create-admin
-router.post('/create-admin', (req, res) => {
-  const { code, username, password, email } = req.body;
+    const { type, subject, message } = req.body;
+    const userId = req.user.id;
 
-  if (code !== process.env.ADMIN_CREATION_CODE) {
-    return res.status(403).json({ error: 'Code invalide.' });
+    try {
+      const result = db.prepare(`
+        INSERT INTO bank_requests (user_id, type, subject, message, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'open', datetime('now'), datetime('now'))
+      `).run(userId, type, subject, message);
+
+      logActivity({
+        actorUserId:  userId,
+        action:       'request_created',
+        targetUserId: userId,
+        details:      { type, subject },
+        ipAddress:    req.ip,
+      });
+
+      logger.info('Nouvelle demande utilisateur', { userId, type, subject });
+
+      return res.status(201).json({
+        message:   'Demande envoyée avec succès.',
+        requestId: result.lastInsertRowid,
+      });
+    } catch (err) {
+      logger.error('Erreur création demande', { error: err, userId });
+      return res.status(500).json({ error: 'Erreur interne lors de la création de la demande.' });
+    }
   }
+);
 
-  const existing = db.prepare("SELECT 1 FROM users WHERE role = 'admin'").get();
-  if (existing) {
-    return res.status(409).json({ error: 'Un admin existe déjà.' });
+// ------------------------------------------------------------
+// GET /api/requests/mine
+// Liste des demandes de l'utilisateur connecté
+// ------------------------------------------------------------
+router.get('/mine', requireAuth, (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    const requests = db.prepare(`
+      SELECT id, type, subject, message, status, response, created_at, updated_at
+      FROM bank_requests
+      WHERE user_id = ?
+      ORDER BY created_at DESC
+    `).all(userId);
+
+    return res.json({
+      requests: requests.map((r) => ({
+        id:        r.id,
+        type:      r.type,
+        subject:   r.subject,
+        message:   r.message,
+        status:    r.status,
+        response:  r.response,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      })),
+    });
+  } catch (err) {
+    logger.error('Erreur récupération demandes', { error: err, userId });
+    return res.status(500).json({ error: 'Erreur lors de la récupération des demandes.' });
   }
-
-  const hash = bcrypt.hashSync(password, BCRYPT_ROUNDS);
-
-  const result = db.prepare(`
-    INSERT INTO users (username, email, password_hash, display_name, role, has_tpe, is_active)
-    VALUES (?, ?, ?, ?, 'admin', 0, 1)
-  `).run(username, email, hash, 'Administrateur');
-
-  const userId = result.lastInsertRowid;
-
-  createAccountForUser(userId, 0);
-
-  res.json({ message: 'Admin créé avec succès.' });
 });
-
-module.exports = router;
