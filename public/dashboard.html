@@ -6,17 +6,18 @@ Tableau de bord principal
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Dashboard - Banque RP</title>
 
-  <link rel="stylesheet" href="/css/style.css" />
-  <link rel="stylesheet" href="/css/components.css" />
-  <link rel="stylesheet" href="/css/dashboard.css" />
+  <link rel="stylesheet" href="/css/style.css"/>
+  <link rel="stylesheet" href="/css/components.css"/>
+  <link rel="stylesheet" href="/css/dashboard.css"/>
 
   <script src="/js/theme.js"></script>
   <script src="/js/api.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="/js/dashboard.js"></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
@@ -35,17 +36,15 @@ Tableau de bord principal
       <a href="/transfer.html">Virement</a>
       <a href="/history.html">Historique</a>
       <a href="/search.html">Recherche</a>
-      <a href="/tpe.html" id="tpeLink">TPE</a>
-      <a href="/employee.html" id="employeeLink">Employé</a>
-      <a href="/admin.html" id="adminLink">Admin</a>
+      <a href="/tpe.html">TPE</a>
+      <a href="/employee.html">Employé</a>
+      <a href="/admin.html">Admin</a>
       <a href="/profile.html">Profil</a>
     </nav>
 
-    <div class="sidebar-footer">
-      <button onclick="API.auth.logout().then(()=>location.href='/login.html')">
-        Déconnexion
-      </button>
-    </div>
+    <button onclick="API.auth.logout().then(()=>location='/login.html')">
+      Déconnexion
+    </button>
 
   </aside>
 
@@ -59,14 +58,6 @@ Tableau de bord principal
 
       <div class="topbar-actions">
         <button onclick="toggleTheme()">🌓</button>
-
-        <div class="notifications">
-          <button id="notifBtn">🔔</button>
-          <span id="notifBadge" class="badge"></span>
-
-          <div id="notifPanel" class="notif-panel"></div>
-        </div>
-
       </div>
 
     </header>
@@ -74,33 +65,36 @@ Tableau de bord principal
     <!-- CONTENT -->
     <section class="page-content">
 
-      <!-- SOLDE -->
+      <!-- BALANCE CARD -->
       <div class="balance-card">
-        <h2>Solde</h2>
-        <div class="balance-amount" id="balance">0 €</div>
-        <div class="iban" id="iban">IBAN</div>
 
-        <a class="btn primary" href="/transfer.html">
+        <h2>Solde</h2>
+        <div id="balanceAmount">0,00 €</div>
+
+        <p>IBAN : <span id="iban">-</span></p>
+
+        <button onclick="location.href='/transfer.html'">
           Faire un virement
-        </a>
+        </button>
+
       </div>
 
       <!-- STATS -->
       <div class="stats-grid">
 
         <div class="stat-card">
-          <h3>Reçus</h3>
-          <div id="received30d">0 €</div>
+          <p>Reçus</p>
+          <span id="received">0 €</span>
         </div>
 
         <div class="stat-card">
-          <h3>Envoyés</h3>
-          <div id="sent30d">0 €</div>
+          <p>Envoyés</p>
+          <span id="sent">0 €</span>
         </div>
 
         <div class="stat-card">
-          <h3>Transactions</h3>
-          <div id="tx30d">0</div>
+          <p>Transactions</p>
+          <span id="txCount">0</span>
         </div>
 
       </div>
@@ -110,10 +104,13 @@ Tableau de bord principal
         <canvas id="chart"></canvas>
       </div>
 
-      <!-- TRANSACTIONS -->
+      <!-- LAST TRANSACTIONS -->
       <div class="card">
+
         <h3>Dernières transactions</h3>
+
         <div id="lastTransactions"></div>
+
       </div>
 
     </section>
