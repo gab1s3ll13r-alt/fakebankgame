@@ -1,130 +1,138 @@
 // ============================================================
 // public/js/dashboard.js
-// Tableau de bord principal
+// Dashboard utilisateur principal
+// - Charge les infos utilisateur
+// - Affiche le compte bancaire
+// - Gère les actions rapides (balance, profil, etc.)
 // ============================================================
 
 (function () {
   'use strict';
 
-  let balancePolling = null;
+  // ----------------------------------------------------------
+  // Éléments DOM
+  // ----------------------------------------------------------
+  const dom = {
+    username: document.querySelector('#username'),
+    displayName: document.querySelector('#displayName'),
+    email: document.querySelector('#email'),
+
+    iban: document.querySelector('#iban'),
+    balance: document.querySelector('#balance'),
+    bankName: document.querySelector('#bankName'),
+
+    accountStatus: document.querySelector('#accountStatus'),
+
+    logoutBtn: document.querySelector('#logoutBtn'),
+  };
 
   // ----------------------------------------------------------
-  // Formatage
+  // État local
   // ----------------------------------------------------------
-  function formatAmount(cents) {
-    return (cents / 100).toLocaleString('fr-FR', {
-      style: 'currency',
-      currency: 'EUR',
-    });
+  let currentUser = null;
+
+  // ----------------------------------------------------------
+  // UI helpers
+  // ----------------------------------------------------------
+  function setText(el, value) {
+    if (!el) return;
+    el.textContent = value ?? '-';
   }
 
-  function formatDate(dateStr) {
-    const date = new Date(dateStr);
-    return date.toLocaleString('fr-FR');
+  function formatBalance(amount, currency = 'EUR') {
+    try {
+      return new Intl.NumberFormat('fr-FR', {
+        style: 'currency',
+        currency,
+      }).format(amount || 0);
+    } catch {
+      return `${amount} ${currency}`;
+    }
+  }
+
+  function setLoadingState(isLoading) {
+    if (isLoading) {
+      setText(dom.balance, 'Chargement...');
+      setText(dom.iban, '...');
+    }
   }
 
   // ----------------------------------------------------------
-  // Auth check
+  // Chargement utilisateur
   // ----------------------------------------------------------
-  async function checkAuth() {
+  async function loadUser() {
+    setLoadingState(true);
+
     const res = await window.API.auth.me();
-    if (res.error) {
+
+    if (res.error || !res.data?.user) {
       window.location.href = '/login.html';
-      return null;
+      return;
     }
-    return res.data;
+
+    currentUser = res.data.user;
+    renderUser(currentUser);
   }
 
   // ----------------------------------------------------------
-  // Load balance
+  // Rendu UI
   // ----------------------------------------------------------
-  async function loadBalance() {
-    const res = await window.API.account.getBalance();
-    if (res.error) return;
+  function renderUser(user) {
+    setText(dom.username, user.username);
+    setText(dom.displayName, user.displayName);
+    setText(dom.email, user.email);
 
-    const el = document.getElementById('balanceAmount');
-    if (el) el.textContent = formatAmount(res.data.balance);
-  }
+    const account = user.account;
 
-  // ----------------------------------------------------------
-  // Load account info
-  // ----------------------------------------------------------
-  async function loadAccount() {
-    const res = await window.API.account.get();
-    if (res.error) return;
+    if (!account) {
+      setText(dom.iban, 'Aucun compte');
+      setText(dom.balance, '-');
+      setText(dom.bankName, '-');
+      return;
+    }
 
-    const ibanEl = document.getElementById('iban');
-    if (ibanEl) ibanEl.textContent = res.data.iban;
-  }
+    setText(dom.iban, account.ibanFormatted || account.iban);
+    setText(dom.balance, formatBalance(account.balance, account.currency));
+    setText(dom.bankName, account.bankName);
 
-  // ----------------------------------------------------------
-  // Transactions
-  // ----------------------------------------------------------
-  async function loadTransactions() {
-    const res = await window.API.transactions.getHistory({ limit: 5 });
-    if (res.error) return;
-
-    const container = document.getElementById('transactions');
-    if (!container) return;
-
-    container.innerHTML = '';
-
-    res.data.transactions.forEach(tx => {
-      const div = document.createElement('div');
-      div.className = 'transaction-row';
-
-      div.innerHTML = `
-        <div>
-          <strong>${tx.type}</strong><br>
-          <small>${formatDate(tx.created_at)}</small>
-        </div>
-        <div>
-          ${formatAmount(tx.amount)}
-        </div>
-      `;
-
-      container.appendChild(div);
-    });
-  }
-
-  // ----------------------------------------------------------
-  // Notifications
-  // ----------------------------------------------------------
-  async function loadNotifications() {
-    const res = await window.API.account.getNotifications({ unread: true });
-    if (res.error) return;
-
-    const badge = document.getElementById('notifBadge');
-    if (badge) {
-      badge.textContent = res.data.notifications.length;
+    if (account.isFrozen) {
+      setText(dom.accountStatus, '❄️ Compte gelé');
+      dom.accountStatus.classList?.add('status-frozen');
+    } else {
+      setText(dom.accountStatus, 'Actif');
+      dom.accountStatus.classList?.remove('status-frozen');
     }
   }
 
   // ----------------------------------------------------------
-  // Polling solde
+  // Logout
   // ----------------------------------------------------------
-  function startPolling() {
-    if (balancePolling) clearInterval(balancePolling);
+  async function logout() {
+    const res = await window.API.auth.logout();
 
-    balancePolling = setInterval(() => {
-      loadBalance();
-      loadNotifications();
-    }, 30000);
+    // Même si erreur, on force la sortie session côté client
+    window.location.href = '/login.html';
   }
 
   // ----------------------------------------------------------
-  // Init dashboard
+  // Refresh manuel (optionnel bouton UI)
   // ----------------------------------------------------------
-  async function init() {
-    const user = await checkAuth();
-    if (!user) return;
+  async function refresh() {
+    await loadUser();
+  }
 
-    await loadAccount();
-    await loadBalance();
-    await loadTransactions();
-    await loadNotifications();
+  // ----------------------------------------------------------
+  // Init
+  // ----------------------------------------------------------
+  function init() {
+    if (dom.logoutBtn) {
+      dom.logoutBtn.addEventListener('click', logout);
+    }
 
-    startPolling();
+    loadUser();
+
+    // refresh auto léger (optionnel)
+    setInterval(loadUser, 60000);
   }
 
   document.addEventListener('DOMContentLoaded', init);
