@@ -1,6 +1,6 @@
 // ============================================================
 // public/js/auth.js
-// Logique login / register
+// Gestion login + register + validation formulaires
 // ============================================================
 
 (function () {
@@ -9,154 +9,173 @@
   // ----------------------------------------------------------
   // Helpers UI
   // ----------------------------------------------------------
-  function showError(el, msg) {
-    if (!el) return;
-    el.textContent = msg;
-    el.style.display = 'block';
-  }
 
-  function clearError(el) {
-    if (!el) return;
-    el.textContent = '';
-    el.style.display = 'none';
+  function qs(sel) {
+    return document.querySelector(sel);
   }
 
   function setLoading(btn, state) {
     if (!btn) return;
     btn.disabled = state;
-    btn.textContent = state ? 'Chargement...' : btn.dataset.originalText;
+    btn.dataset.loading = state ? 'true' : 'false';
+  }
+
+  function showError(el, msg) {
+    if (!el) return;
+    el.textContent = msg;
+    el.style.display = msg ? 'block' : 'none';
   }
 
   // ----------------------------------------------------------
-  // Init login
+  // Vérification session au chargement
   // ----------------------------------------------------------
-  async function initLogin() {
-    const form = document.getElementById('loginForm');
-    if (!form) return;
 
-    const errorBox = document.getElementById('loginError');
-    const btn = form.querySelector('button');
-
-    if (btn) btn.dataset.originalText = btn.textContent;
-
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-
-      clearError(errorBox);
-      setLoading(btn, true);
-
-      const identifier = form.identifier.value.trim();
-      const password = form.password.value;
-
-      if (!identifier || !password) {
-        showError(errorBox, 'Tous les champs sont obligatoires');
-        setLoading(btn, false);
-        return;
+  async function checkSession() {
+    try {
+      const res = await window.API.auth.me();
+      if (res.status === 200) {
+        window.location.href = '/dashboard.html';
       }
+    } catch (e) {
+      // ignore
+    }
+  }
 
-      const res = await window.API.auth.login(identifier, password);
+  // ----------------------------------------------------------
+  // LOGIN
+  // ----------------------------------------------------------
 
-      if (res.error) {
-        showError(errorBox, res.error);
-        setLoading(btn, false);
-        return;
-      }
+  async function handleLogin(e) {
+    e.preventDefault();
 
+    const btn = qs('#loginBtn');
+    const identifier = qs('#identifier').value.trim();
+    const password = qs('#password').value;
+
+    const errorBox = qs('#loginError');
+
+    showError(errorBox, '');
+    setLoading(btn, true);
+
+    const res = await window.API.auth.login(identifier, password);
+
+    setLoading(btn, false);
+
+    if (res.status === 200) {
       window.location.href = '/dashboard.html';
-    });
-  }
-
-  // ----------------------------------------------------------
-  // Init register
-  // ----------------------------------------------------------
-  async function initRegister() {
-    const form = document.getElementById('registerForm');
-    if (!form) return;
-
-    const errorBox = document.getElementById('registerError');
-    const btn = form.querySelector('button');
-
-    if (btn) btn.dataset.originalText = btn.textContent;
-
-    function validate() {
-      const username = form.username.value.trim();
-      const email = form.email.value.trim();
-      const password = form.password.value;
-      const confirm = form.confirmPassword.value;
-
-      if (username.length < 3) return 'Username trop court';
-      if (!email.includes('@')) return 'Email invalide';
-      if (password.length < 6) return 'Mot de passe trop court';
-      if (password !== confirm) return 'Les mots de passe ne correspondent pas';
-
-      return null;
+      return;
     }
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
+    showError(errorBox, res.error || 'Erreur de connexion');
+  }
 
-      clearError(errorBox);
+  // ----------------------------------------------------------
+  // REGISTER
+  // ----------------------------------------------------------
 
-      const validationError = validate();
-      if (validationError) {
-        showError(errorBox, validationError);
-        return;
-      }
+  function validateRegister(data) {
+    if (!data.username || data.username.length < 3) {
+      return 'Username trop court';
+    }
 
-      setLoading(btn, true);
+    if (!data.email || !data.email.includes('@')) {
+      return 'Email invalide';
+    }
 
-      const data = {
-        username: form.username.value.trim(),
-        email: form.email.value.trim(),
-        displayName: form.displayName.value.trim(),
-        password: form.password.value,
-      };
+    if (!data.password || data.password.length < 6) {
+      return 'Mot de passe trop court';
+    }
 
-      const res = await window.API.auth.register(data);
+    if (data.password !== data.confirmPassword) {
+      return 'Les mots de passe ne correspondent pas';
+    }
 
-      if (res.error) {
-        showError(errorBox, res.error);
-        setLoading(btn, false);
-        return;
-      }
+    return null;
+  }
 
+  async function handleRegister(e) {
+    e.preventDefault();
+
+    const btn = qs('#registerBtn');
+
+    const data = {
+      username: qs('#username').value.trim(),
+      email: qs('#email').value.trim(),
+      displayName: qs('#displayName').value.trim(),
+      password: qs('#password').value,
+      confirmPassword: qs('#confirmPassword').value,
+    };
+
+    const errorBox = qs('#registerError');
+
+    const validationError = validateRegister(data);
+    if (validationError) {
+      showError(errorBox, validationError);
+      return;
+    }
+
+    setLoading(btn, true);
+
+    const res = await window.API.auth.register(data);
+
+    setLoading(btn, false);
+
+    if (res.status === 201) {
       window.location.href = '/dashboard.html';
-    });
+      return;
+    }
+
+    showError(errorBox, res.error || 'Erreur inscription');
   }
 
   // ----------------------------------------------------------
-  // Password strength (simple)
+  // PASSWORD STRENGTH
   // ----------------------------------------------------------
-  function initPasswordStrength() {
-    const input = document.getElementById('password');
-    const bar = document.getElementById('passwordStrength');
 
-    if (!input || !bar) return;
+  function getStrength(password) {
+    let score = 0;
 
-    input.addEventListener('input', () => {
-      const val = input.value;
-      let score = 0;
+    if (password.length >= 6) score++;
+    if (password.length >= 10) score++;
+    if (/[A-Z]/.test(password)) score++;
+    if (/[0-9]/.test(password)) score++;
+    if (/[^A-Za-z0-9]/.test(password)) score++;
 
-      if (val.length >= 6) score++;
-      if (val.length >= 10) score++;
-      if (/[A-Z]/.test(val)) score++;
-      if (/[0-9]/.test(val)) score++;
+    return Math.min(score, 4);
+  }
 
-      const percent = (score / 4) * 100;
-      bar.style.width = percent + '%';
+  function updateStrength() {
+    const bar = qs('#strengthBar');
+    const pwd = qs('#password').value;
 
-      if (percent < 40) bar.style.background = 'red';
-      else if (percent < 70) bar.style.background = 'orange';
-      else bar.style.background = 'green';
-    });
+    if (!bar) return;
+
+    const strength = getStrength(pwd);
+    const percent = (strength / 4) * 100;
+
+    bar.style.width = percent + '%';
+
+    if (percent < 40) bar.style.background = 'red';
+    else if (percent < 70) bar.style.background = 'orange';
+    else bar.style.background = 'green';
   }
 
   // ----------------------------------------------------------
-  // Init global
+  // INIT
   // ----------------------------------------------------------
-  document.addEventListener('DOMContentLoaded', () => {
-    initLogin();
-    initRegister();
-    initPasswordStrength();
-  });
+
+  function init() {
+    checkSession();
+
+    const loginForm = qs('#loginForm');
+    const registerForm = qs('#registerForm');
+
+    if (loginForm) loginForm.addEventListener('submit', handleLogin);
+    if (registerForm) registerForm.addEventListener('submit', handleRegister);
+
+    const pwdInput = qs('#password');
+    if (pwdInput) pwdInput.addEventListener('input', updateStrength);
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
 })();
