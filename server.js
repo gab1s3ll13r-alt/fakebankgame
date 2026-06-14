@@ -1,5 +1,5 @@
 // ============================================================
-// server.js (CLEAN + SAFE VERSION)
+// server.js
 // ============================================================
 
 const path = require('path');
@@ -11,14 +11,20 @@ require('dotenv').config();
 const { db } = require('./database/db');
 const logger = require('./utils/logger');
 
-const authRoutes = require('./routes/auth');
-const accountRoutes = require('./routes/account');
+const authRoutes      = require('./routes/auth');
+const accountRoutes   = require('./routes/account');
 const transactionsRoutes = require('./routes/transactions');
+const usersRoutes     = require('./routes/users');
+const tpeRoutes       = require('./routes/tpe');
+const adminRoutes     = require('./routes/admin');
+const employeeRoutes  = require('./routes/employee');
+const requestsRoutes  = require('./routes/requests');
+const setupRoutes     = require('./routes/setup');
 
 const app = express();
 
-const PORT = parseInt(process.env.PORT, 10) || 3000;
-const NODE_ENV = process.env.NODE_ENV || 'development';
+const PORT    = parseInt(process.env.PORT, 10) || 3000;
+const NODE_ENV  = process.env.NODE_ENV || 'development';
 const isProduction = NODE_ENV === 'production';
 
 app.set('trust proxy', 1);
@@ -40,7 +46,7 @@ app.use((req, res, next) => {
 // ------------------------------------------------------------
 // Sessions
 // ------------------------------------------------------------
-const sessionDbDir = path.dirname(
+const sessionDbDir  = path.dirname(
   path.resolve(__dirname, process.env.SESSION_DB_PATH || './database/sessions.db')
 );
 const sessionDbFile = path.basename(
@@ -50,29 +56,35 @@ const sessionDbFile = path.basename(
 app.use(
   session({
     store: new SQLiteStore({
-      db: sessionDbFile,
-      dir: sessionDbDir,
+      db:    sessionDbFile,
+      dir:   sessionDbDir,
       table: 'sessions',
     }),
-    secret: process.env.SESSION_SECRET || 'change-this-secret-key',
-    resave: false,
+    secret:           process.env.SESSION_SECRET || 'change-this-secret-key',
+    resave:           false,
     saveUninitialized: false,
-    rolling: true,
+    rolling:          true,
     cookie: {
       httpOnly: true,
-      secure: isProduction,
+      secure:   isProduction,
       sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      maxAge:   7 * 24 * 60 * 60 * 1000,
     },
   })
 );
 
 // ------------------------------------------------------------
-// Routes (UNIQUEMENT celles qui existent)
+// Routes API
 // ------------------------------------------------------------
-app.use('/api/auth', authRoutes);
-app.use('/api/account', accountRoutes);
+app.use('/api/auth',         authRoutes);
+app.use('/api/account',      accountRoutes);
 app.use('/api/transactions', transactionsRoutes);
+app.use('/api/users',        usersRoutes);
+app.use('/api/tpe',          tpeRoutes);
+app.use('/api/admin',        adminRoutes);
+app.use('/api/employee',     employeeRoutes);
+app.use('/api/requests',     requestsRoutes);
+app.use('/api/setup',        setupRoutes);
 
 // ------------------------------------------------------------
 // Static frontend
@@ -102,9 +114,7 @@ app.use('/api', (req, res) => {
 // ------------------------------------------------------------
 app.use((err, req, res, next) => {
   logger.error('Erreur serveur', { error: err, path: req.path });
-
   if (res.headersSent) return next(err);
-
   res.status(500).json({ error: 'Erreur interne serveur.' });
 });
 
@@ -127,5 +137,5 @@ function shutdown(signal) {
   process.exit(0);
 }
 
-process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGINT',  () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
