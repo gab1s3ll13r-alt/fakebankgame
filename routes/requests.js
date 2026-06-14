@@ -1,94 +1,99 @@
 // ============================================================
 // routes/requests.js
-// Gestion des demandes bancaires utilisateur (bank_requests)
+// Gestion des demandes bancaires utilisateurs
+// - Création de demande (crédit, ouverture service, etc.)
+// - Consultation des demandes utilisateur
 // ============================================================
 
 const express = require('express');
+const { body, validationResult } = require('express-validator');
+
+const { db, logActivity } = require('../database/db');
+const { requireAuth } = require('../middleware/auth');
+const logger = require('../utils/logger');
+
 const router = express.Router();
 
-const { db } = require('../database/db');
-const { requireAuth } = require('../middleware/auth');
-
 // ------------------------------------------------------------
-// CREATE request (utilisateur connecté)
 // POST /api/requests
+// Création d'une demande utilisateur
 // ------------------------------------------------------------
-router.post('/', requireAuth, (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { type, title, message } = req.body;
-
-    if (!type || !title) {
-      return res.status(400).json({ error: 'Champs obligatoires manquants' });
+router.post(
+  '/',
+  requireAuth,
+  [
+    body('type')
+      .trim()
+      .notEmpty()
+      .withMessage('Type de demande requis.'),
+    body('message')
+      .trim()
+      .isLength({ min: 5, max: 500 })
+      .withMessage('Message requis (5 à 500 caractères).'),
+  ],
+  (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: 'Validation echouee.', details: errors.array() });
     }
 
-    const stmt = db.prepare(`
-      INSERT INTO bank_requests (user_id, type, title, message, status, created_at)
-      VALUES (?, ?, ?, ?, 'open', datetime('now'))
-    `);
-
-    const result = stmt.run(
-      userId,
-      type,
-      title,
-      message || null
-    );
-
-    res.status(201).json({
-      message: 'Demande créée',
-      requestId: result.lastInsertRowid,
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-
-// ------------------------------------------------------------
-// GET my requests
-// GET /api/requests/mine
-// ------------------------------------------------------------
-router.get('/mine', requireAuth, (req, res) => {
-  try {
+    const { type, message } = req.body;
     const userId = req.user.id;
 
-    const rows = db.prepare(`
-      SELECT *
-      FROM bank_requests
+    try {
+      const stmt = db.prepare(`
+        INSERT INTO requests (user_id, type, message, status, created_at)
+        VALUES (?, ?, ?, 'pending', datetime('now'))
+      `);
+
+      const result = stmt.run(userId, type, message);
+
+      logActivity({
+        actorUserId: userId,
+        action: 'request_created',
+        targetUserId: userId,
+        details: { type, message },
+        ipAddress: req.ip,
+      });
+
+      logger.info('Nouvelle demande utilisateur', { userId, type });
+
+      return res.status(201).json({
+        message: 'Demande envoyee avec succes.',
+        requestId: result.lastInsertRowid,
+      });
+    } catch (err) {
+      logger.error('Erreur creation request', { error: err, userId });
+
+      return res.status(500).json({
+        error: 'Erreur interne lors de la creation de la demande.',
+      });
+    }
+  }
+);
+
+// ------------------------------------------------------------
+// GET /api/requests/mine
+// Liste des demandes de l'utilisateur connecté
+// ------------------------------------------------------------
+router.get('/mine', requireAuth, (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    const requests = db.prepare(`
+      SELECT id, type, message, status, created_at
+      FROM requests
       WHERE user_id = ?
       ORDER BY created_at DESC
     `).all(userId);
 
-    res.json({ requests: rows });
+    return res.json({ requests });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
+    logger.error('Erreur recuperation requests', { error: err, userId });
 
-// ------------------------------------------------------------
-// GET single request (optional)
-// GET /api/requests/:id
-// ------------------------------------------------------------
-router.get('/:id', requireAuth, (req, res) => {
-  try {
-    const userId = req.user.id;
-    const id = req.params.id;
-
-    const request = db.prepare(`
-      SELECT *
-      FROM bank_requests
-      WHERE id = ? AND user_id = ?
-    `).get(id, userId);
-
-    if (!request) {
-      return res.status(404).json({ error: 'Demande introuvable' });
-    }
-
-    res.json({ request });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur serveur' });
+    return res.status(500).json({
+      error: 'Erreur lors de la recuperation des demandes.',
+    });
   }
 });
 
