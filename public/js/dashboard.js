@@ -1,138 +1,120 @@
 // ============================================================
 // public/js/dashboard.js
-// Dashboard utilisateur principal
-// - Charge les infos utilisateur
-// - Affiche le compte bancaire
-// - Gère les actions rapides (balance, profil, etc.)
+// Tableau de bord utilisateur
+// - Charge utilisateur connecté
+// - Affiche compte + solde
+// - Affiche transactions récentes
+// - Affiche notifications
 // ============================================================
 
 (function () {
   'use strict';
 
   // ----------------------------------------------------------
-  // Éléments DOM
+  // DOM
   // ----------------------------------------------------------
   const dom = {
-    username: document.querySelector('#username'),
-    displayName: document.querySelector('#displayName'),
-    email: document.querySelector('#email'),
+    username: document.getElementById('username'),
+    balance: document.getElementById('balance'),
+    iban: document.getElementById('iban'),
 
-    iban: document.querySelector('#iban'),
-    balance: document.querySelector('#balance'),
-    bankName: document.querySelector('#bankName'),
-
-    accountStatus: document.querySelector('#accountStatus'),
-
-    logoutBtn: document.querySelector('#logoutBtn'),
+    transactions: document.getElementById('transactions'),
+    notifications: document.getElementById('notifications'),
   };
 
   // ----------------------------------------------------------
-  // État local
+  // Format monnaie
   // ----------------------------------------------------------
-  let currentUser = null;
-
-  // ----------------------------------------------------------
-  // UI helpers
-  // ----------------------------------------------------------
-  function setText(el, value) {
-    if (!el) return;
-    el.textContent = value ?? '-';
-  }
-
-  function formatBalance(amount, currency = 'EUR') {
-    try {
-      return new Intl.NumberFormat('fr-FR', {
-        style: 'currency',
-        currency,
-      }).format(amount || 0);
-    } catch {
-      return `${amount} ${currency}`;
-    }
-  }
-
-  function setLoadingState(isLoading) {
-    if (isLoading) {
-      setText(dom.balance, 'Chargement...');
-      setText(dom.iban, '...');
-    }
+  function formatMoney(amount) {
+    return Number(amount).toLocaleString('fr-FR', {
+      style: 'currency',
+      currency: 'EUR',
+    });
   }
 
   // ----------------------------------------------------------
-  // Chargement utilisateur
+  // Utilisateur connecté
   // ----------------------------------------------------------
   async function loadUser() {
-    setLoadingState(true);
-
     const res = await window.API.auth.me();
-
-    if (res.error || !res.data?.user) {
+    if (res.error) {
       window.location.href = '/login.html';
-      return;
+      return null;
     }
 
-    currentUser = res.data.user;
-    renderUser(currentUser);
+    const user = res.data.user;
+
+    if (dom.username) dom.username.textContent = user.displayName;
+    if (dom.balance) dom.balance.textContent = formatMoney(user.account?.balance || 0);
+    if (dom.iban) dom.iban.textContent = user.account?.ibanFormatted || '-';
+
+    return user;
   }
 
   // ----------------------------------------------------------
-  // Rendu UI
+  // Transactions récentes
   // ----------------------------------------------------------
-  function renderUser(user) {
-    setText(dom.username, user.username);
-    setText(dom.displayName, user.displayName);
-    setText(dom.email, user.email);
+  async function loadTransactions() {
+    const res = await window.API.transactions.getHistory({ limit: 5 });
 
-    const account = user.account;
+    if (res.error || !dom.transactions) return;
 
-    if (!account) {
-      setText(dom.iban, 'Aucun compte');
-      setText(dom.balance, '-');
-      setText(dom.bankName, '-');
-      return;
-    }
+    dom.transactions.innerHTML = '';
 
-    setText(dom.iban, account.ibanFormatted || account.iban);
-    setText(dom.balance, formatBalance(account.balance, account.currency));
-    setText(dom.bankName, account.bankName);
+    (res.data.transactions || []).forEach((t) => {
+      const div = document.createElement('div');
+      div.className = 'transaction-item';
 
-    if (account.isFrozen) {
-      setText(dom.accountStatus, '❄️ Compte gelé');
-      dom.accountStatus.classList?.add('status-frozen');
-    } else {
-      setText(dom.accountStatus, 'Actif');
-      dom.accountStatus.classList?.remove('status-frozen');
-    }
+      const sign = t.type === 'credit' ? '+' : '-';
+
+      div.innerHTML = `
+        <div>
+          <strong>${t.description || 'Transaction'}</strong>
+          <small>${new Date(t.created_at).toLocaleString('fr-FR')}</small>
+        </div>
+        <div class="${t.type}">
+          ${sign}${formatMoney(t.amount)}
+        </div>
+      `;
+
+      dom.transactions.appendChild(div);
+    });
   }
 
   // ----------------------------------------------------------
-  // Logout
+  // Notifications
   // ----------------------------------------------------------
-  async function logout() {
-    const res = await window.API.auth.logout();
+  async function loadNotifications() {
+    const res = await window.API.account.getNotifications({ limit: 5 });
 
-    // Même si erreur, on force la sortie session côté client
-    window.location.href = '/login.html';
-  }
+    if (res.error || !dom.notifications) return;
 
-  // ----------------------------------------------------------
-  // Refresh manuel (optionnel bouton UI)
-  // ----------------------------------------------------------
-  async function refresh() {
-    await loadUser();
+    dom.notifications.innerHTML = '';
+
+    (res.data.notifications || []).forEach((n) => {
+      const div = document.createElement('div');
+      div.className = 'notification-item';
+
+      div.innerHTML = `
+        <div>${n.message}</div>
+        <small>${new Date(n.created_at).toLocaleString('fr-FR')}</small>
+      `;
+
+      dom.notifications.appendChild(div);
+    });
   }
 
   // ----------------------------------------------------------
   // Init
   // ----------------------------------------------------------
-  function init() {
-    if (dom.logoutBtn) {
-      dom.logoutBtn.addEventListener('click', logout);
-    }
+  async function init() {
+    const user = await loadUser();
+    if (!user) return;
 
-    loadUser();
-
-    // refresh auto léger (optionnel)
-    setInterval(loadUser, 60000);
+    await Promise.all([
+      loadTransactions(),
+      loadNotifications(),
+    ]);
   }
 
   document.addEventListener('DOMContentLoaded', init);
