@@ -1,162 +1,351 @@
 // ============================================================
 // public/js/tpe.js
-// Logique TPE commerçant + paiement QR
+// Interface TPE commerçant (tpe.html) + page paiement (tpe-pay.html)
 // ============================================================
 
 (function () {
   'use strict';
 
-  // ------------------------------------------------------------
-  // Vérification accès TPE (page commerçant)
-  // ------------------------------------------------------------
+  var currentQrUuid = null;
+  var pollingInterval = null;
+
+  // ----------------------------------------------------------
+  // Helpers
+  // ----------------------------------------------------------
+  function formatMoney(cents) {
+    return (cents / 100).toLocaleString('fr-FR', {
+      style:    'currency',
+      currency: 'EUR',
+    });
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  // ----------------------------------------------------------
+  // PAGE TPE COMMERÇANT (tpe.html)
+  // ----------------------------------------------------------
   async function initTpePage() {
-    const res = await API.auth.me();
-    if (res.status !== 200) return;
+    // Vérifier la connexion et l'accès TPE
+    const res = await window.API.auth.me();
+    if (res.error || !res.data) {
+      window.location.href = '/login.html';
+      return;
+    }
 
-    const user = res.data;
+    const user = res.data.user;
 
-    if (!user.hasTpe && !user.role === 'admin') {
+    // Vérifier accès TPE (has_tpe = true OU rôle admin)
+    if (!user.hasTpe && user.role !== 'admin') {
       window.location.href = '/dashboard.html';
       return;
     }
 
-    document.getElementById('tpeLabel').textContent =
-      user.tpeLabel || 'Commerce';
-
-    loadBalance();
-    loadHistory();
-    setupEvents();
-  }
-
-  // ------------------------------------------------------------
-  // Balance
-  // ------------------------------------------------------------
-  async function loadBalance() {
-    const res = await API.account.getBalance();
-    if (res.status === 200) {
-      document.getElementById('tpeBalance').textContent =
-        formatMoney(res.data.balance);
+    // Afficher le libellé du commerce
+    const tpeLabelEl = document.getElementById('tpeLabel');
+    if (tpeLabelEl) {
+      tpeLabelEl.textContent = user.tpeLabel || 'Mon commerce';
     }
+
+    await loadBalance();
+    await loadTpeHistory();
+    setupTpeEvents();
   }
 
-  // ------------------------------------------------------------
-  // Génération QR
-  // ------------------------------------------------------------
-  function setupEvents() {
-    const btn = document.getElementById('generateQrBtn');
-    const cancelBtn = document.getElementById('cancelQrBtn');
+  // ----------------------------------------------------------
+  // Charger le solde
+  // ----------------------------------------------------------
+  async function loadBalance() {
+    const res = await window.API.account.getBalance();
+    if (res.error || !res.data) return;
 
-    btn?.addEventListener('click', generateQr);
-    cancelBtn?.addEventListener('click', cancelQr);
+    const el = document.getElementById('tpeBalance');
+    if (el) el.textContent = formatMoney(res.data.balance || 0);
   }
 
+  // ----------------------------------------------------------
+  // Événements du TPE
+  // ----------------------------------------------------------
+  function setupTpeEvents() {
+    var generateBtn = document.getElementById('generateQrBtn');
+    var cancelBtn   = document.getElementById('cancelQrBtn');
+
+    if (generateBtn) generateBtn.addEventListener('click', generateQr);
+    if (cancelBtn)   cancelBtn.addEventListener('click',   cancelQr);
+  }
+
+  // ----------------------------------------------------------
+  // Générer un QR code de paiement
+  // ----------------------------------------------------------
   async function generateQr() {
-    const amount = parseFloat(document.getElementById('amountInput').value);
-    const label = document.getElementById('labelInput').value;
+    var amountInput = document.getElementById('amountInput');
+    var labelInput  = document.getElementById('labelInput');
+
+    var amount = parseFloat((amountInput || {}).value || '0');
+    var label  = ((labelInput || {}).value || '').trim();
 
     if (!amount || amount <= 0) {
-      alert('Montant invalide');
+      alert('Veuillez entrer un montant valide.');
       return;
     }
 
-    const res = await API.tpe.request({ amount, label });
+    var generateBtn = document.getElementById('generateQrBtn');
+    if (generateBtn) { generateBtn.disabled = true; generateBtn.textContent = 'Création...'; }
 
-    if (res.status !== 201) {
-      alert(res.error || 'Erreur création QR');
+    var res = await window.API.tpe.request({ amount: amount, label: label || undefined });
+
+    if (generateBtn) { generateBtn.disabled = false; generateBtn.textContent = 'Générer QR Code'; }
+
+    if (res.error || !res.data) {
+      alert(res.error || 'Erreur lors de la création du QR code.');
       return;
     }
 
-    const qrData = res.data;
+    var payment    = res.data.payment;
+    currentQrUuid  = payment.qrCodeUuid;
 
-    document.getElementById('qrCard').style.display = 'block';
+    // Construire l'URL de paiement
+    var payUrl = window.location.origin + '/tpe-pay.html?qr=' + encodeURIComponent(currentQrUuid);
 
-    const container = document.getElementById('qrCodeContainer');
-    container.innerHTML = '';
+    // Afficher la carte QR
+    var qrCard = document.getElementById('qrCard');
+    if (qrCard) qrCard.style.display = '';
 
-    QRCode.toCanvas(
-      document.createElement('canvas'),
-      qrData.url,
-      function (error, canvas) {
-        if (!error) container.appendChild(canvas);
+    // Générer le QR code avec la lib QRCode.js (disponible via CDN dans tpe.html)
+    var container = document.getElementById('qrCodeContainer');
+    if (container) {
+      container.innerHTML = '';
+
+      if (typeof QRCode !== 'undefined') {
+        var canvas = document.createElement('canvas');
+        QRCode.toCanvas(canvas, payUrl, { width: 200, margin: 2 }, function (err) {
+          if (!err) container.appendChild(canvas);
+        });
+      } else {
+        // Fallback texte si la lib n'est pas chargée
+        container.innerHTML = '<p style="word-break:break-all; font-size:0.8rem;">' + escHtml(payUrl) + '</p>';
       }
-    );
+    }
 
-    startPendingPolling(qrData.uuid);
+    // Mettre à jour le statut
+    var statusEl = document.getElementById('paymentStatus');
+    if (statusEl) {
+      statusEl.innerHTML = `
+        <p style="color:var(--color-text-muted);">
+          En attente de paiement — <strong>${formatMoney(payment.amount)}</strong>
+        </p>
+        <p style="font-size:0.8rem; color:var(--color-text-muted);">
+          URL : <a href="${escHtml(payUrl)}" target="_blank">${escHtml(payUrl)}</a>
+        </p>
+      `;
+    }
+
+    // Démarrer le polling
+    startPolling(currentQrUuid);
   }
 
-  // ------------------------------------------------------------
-  // Annulation QR
-  // ------------------------------------------------------------
+  // ----------------------------------------------------------
+  // Annuler un QR code en attente
+  // ----------------------------------------------------------
   async function cancelQr() {
-    const uuid = currentQr;
-    if (!uuid) return;
+    if (!currentQrUuid) return;
 
-    await API.tpe.cancel(uuid);
+    stopPolling();
 
-    document.getElementById('qrCard').style.display = 'none';
+    await window.API.tpe.cancel(currentQrUuid);
+
+    currentQrUuid = null;
+
+    var qrCard = document.getElementById('qrCard');
+    if (qrCard) qrCard.style.display = 'none';
+
+    var statusEl = document.getElementById('paymentStatus');
+    if (statusEl) statusEl.innerHTML = '<p style="color:var(--color-text-muted);">Demande annulée.</p>';
   }
 
-  let currentQr = null;
+  // ----------------------------------------------------------
+  // Polling du statut de paiement (toutes les 5 s)
+  // ----------------------------------------------------------
+  function startPolling(uuid) {
+    stopPolling();
 
-  // ------------------------------------------------------------
-  // Polling paiement
-  // ------------------------------------------------------------
-  function startPendingPolling(uuid) {
-    currentQr = uuid;
+    pollingInterval = setInterval(async function () {
+      var res = await window.API.tpe.getPayment(uuid);
 
-    const interval = setInterval(async () => {
-      const res = await API.tpe.getPayment(uuid);
+      if (res.error || !res.data) return;
 
-      if (res.status !== 200) return;
+      var payment = res.data.payment;
 
-      const payment = res.data;
+      if (payment && payment.status === 'paid') {
+        stopPolling();
 
-      if (payment.status === 'paid') {
-        clearInterval(interval);
+        var qrCard = document.getElementById('qrCard');
+        if (qrCard) qrCard.style.display = 'none';
 
-        document.getElementById('paymentStatus').textContent =
-          'Paiement reçu ✔';
+        var statusEl = document.getElementById('paymentStatus');
+        if (statusEl) {
+          statusEl.innerHTML = '<p style="color:var(--color-success); font-weight:600;">✔ Paiement reçu !</p>';
+        }
 
-        loadBalance();
-        loadHistory();
+        currentQrUuid = null;
+        await loadBalance();
+        await loadTpeHistory();
       }
     }, 5000);
   }
 
-  // ------------------------------------------------------------
-  // Historique
-  // ------------------------------------------------------------
-  async function loadHistory() {
-    const res = await API.tpe.getHistory({ limit: 10 });
+  function stopPolling() {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      pollingInterval = null;
+    }
+  }
 
-    if (res.status !== 200) return;
+  // ----------------------------------------------------------
+  // Historique TPE
+  // API retourne { payments: [] } (pas { items: [] })
+  // ----------------------------------------------------------
+  async function loadTpeHistory() {
+    var res = await window.API.tpe.getHistory({ limit: 10 });
 
-    const container = document.getElementById('tpeHistoryList');
-    container.innerHTML = '';
+    if (res.error || !res.data) return;
 
-    res.data.items.forEach((t) => {
-      const div = document.createElement('div');
-      div.className = 'transaction-row';
+    var container = document.getElementById('tpeHistoryList');
+    if (!container) return;
 
-      div.innerHTML = `
-        <span>${t.label || 'Paiement'}</span>
-        <span>${formatMoney(t.amount)}</span>
+    // L'API retourne { payments: [] }
+    var payments = res.data.payments || [];
+
+    if (payments.length === 0) {
+      container.innerHTML = '<p style="color:var(--color-text-muted); text-align:center;">Aucun paiement</p>';
+      return;
+    }
+
+    container.innerHTML = payments.map(function (p) {
+      var statusColor = p.status === 'paid' ? 'var(--color-success)' : 'var(--color-text-muted)';
+      return `
+        <div style="
+          display:flex; justify-content:space-between; align-items:center;
+          padding: 8px 0; border-bottom: 1px solid var(--color-border);
+        ">
+          <div>
+            <span style="font-weight:500;">${escHtml(p.label || 'Paiement')}</span>
+            <span style="margin-left:8px; font-size:0.8rem; color:${statusColor};">[${escHtml(p.status)}]</span>
+          </div>
+          <strong>${formatMoney(p.amount)}</strong>
+        </div>
       `;
-
-      container.appendChild(div);
-    });
+    }).join('');
   }
 
-  // ------------------------------------------------------------
-  // Helpers
-  // ------------------------------------------------------------
-  function formatMoney(cents) {
-    return (cents / 100).toFixed(2) + ' €';
+  // ----------------------------------------------------------
+  // PAGE DE PAIEMENT (tpe-pay.html)
+  // Charge les détails du QR et permet à l'utilisateur de payer.
+  // ----------------------------------------------------------
+  async function initPayPage() {
+    var params  = new URLSearchParams(window.location.search);
+    var qrUuid  = params.get('qr');
+
+    var loadingEl = document.getElementById('loadingState');
+    var errorEl   = document.getElementById('errorState');
+    var errorText = document.getElementById('errorText');
+    var cardEl    = document.getElementById('paymentCard');
+    var successEl = document.getElementById('successState');
+
+    function showState(state) {
+      if (loadingEl) loadingEl.style.display = state === 'loading'  ? '' : 'none';
+      if (errorEl)   errorEl.style.display   = state === 'error'    ? '' : 'none';
+      if (cardEl)    cardEl.style.display     = state === 'payment'  ? '' : 'none';
+      if (successEl) successEl.style.display  = state === 'success'  ? '' : 'none';
+    }
+
+    if (!qrUuid) {
+      showState('error');
+      if (errorText) errorText.textContent = 'QR code invalide ou manquant.';
+      return;
+    }
+
+    showState('loading');
+
+    // Vérifier la connexion
+    var meRes = await window.API.auth.me();
+    if (meRes.error || !meRes.data) {
+      window.location.href = '/login.html?redirect=' + encodeURIComponent(window.location.href);
+      return;
+    }
+
+    var currentUser = meRes.data.user;
+
+    // Charger les détails du paiement
+    var res = await window.API.tpe.getPayment(qrUuid);
+
+    if (res.error || !res.data) {
+      showState('error');
+      if (errorText) errorText.textContent = res.error || 'Paiement introuvable.';
+      return;
+    }
+
+    var payment = res.data.payment;
+
+    if (payment.status !== 'pending') {
+      showState('error');
+      if (errorText) errorText.textContent = 'Ce paiement n\'est plus disponible (statut : ' + payment.status + ').';
+      return;
+    }
+
+    // Afficher les détails
+    var merchantEl = document.getElementById('merchantName');
+    var amountEl   = document.getElementById('amount');
+    var labelEl    = document.getElementById('label');
+    var balanceEl  = document.getElementById('userBalance');
+
+    if (merchantEl) merchantEl.textContent = payment.merchant ? payment.merchant.displayName : '-';
+    if (amountEl)   amountEl.textContent   = formatMoney(payment.amount);
+    if (labelEl)    labelEl.textContent    = payment.label || '-';
+
+    // Charger le solde courant
+    var balRes = await window.API.account.getBalance();
+    if (!balRes.error && balRes.data && balanceEl) {
+      balanceEl.textContent = formatMoney(balRes.data.balance || 0);
+    }
+
+    showState('payment');
+
+    // Bouton de paiement
+    var payBtn = document.getElementById('payBtn');
+    if (payBtn) {
+      payBtn.addEventListener('click', async function () {
+        payBtn.disabled = true;
+        payBtn.textContent = 'Traitement...';
+
+        var payRes = await window.API.tpe.pay(qrUuid);
+
+        if (payRes.error || !payRes.data) {
+          payBtn.disabled = false;
+          payBtn.textContent = 'Payer maintenant';
+          alert(payRes.error || 'Erreur lors du paiement.');
+          return;
+        }
+
+        showState('success');
+      });
+    }
   }
 
-  // ------------------------------------------------------------
-  // Init
-  // ------------------------------------------------------------
-  document.addEventListener('DOMContentLoaded', initTpePage);
-
+  // ----------------------------------------------------------
+  // Détection de la page et initialisation
+  // ----------------------------------------------------------
+  document.addEventListener('DOMContentLoaded', function () {
+    if (document.getElementById('generateQrBtn')) {
+      // Page tpe.html (commerçant)
+      initTpePage();
+    } else if (document.getElementById('payBtn') || document.getElementById('loadingState')) {
+      // Page tpe-pay.html (paiement)
+      initPayPage();
+    }
+  });
 })();
