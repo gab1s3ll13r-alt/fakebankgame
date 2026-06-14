@@ -1,153 +1,131 @@
 // ============================================================
 // public/js/employee.js
-// Interface employé de banque
+// Interface employé banque
+// - Gestion comptes utilisateurs
+// - Crédit / débit
+// - Consultation des comptes et transactions
 // ============================================================
 
 (function () {
   'use strict';
 
-  let selectedAccount = null;
-  let currentUserId = null;
+  // ----------------------------------------------------------
+  // DOM
+  // ----------------------------------------------------------
+  const dom = {
+    searchInput: document.getElementById('searchUser'),
+    results: document.getElementById('results'),
+
+    selectedUser: document.getElementById('selectedUser'),
+
+    creditForm: document.getElementById('creditForm'),
+    debitForm: document.getElementById('debitForm'),
+
+    transactions: document.getElementById('transactions'),
+  };
+
+  let currentUser = null;
+  let searchTimeout = null;
 
   // ----------------------------------------------------------
-  // Vérification accès
-  // ----------------------------------------------------------
-  async function checkAccess() {
-    const res = await window.API.auth.me();
-
-    if (res.error) {
-      window.location.href = '/login.html';
-      return null;
-    }
-
-    const user = res.data;
-
-    if (!(user.role === 'employee' || user.role === 'admin')) {
-      window.location.href = '/dashboard.html';
-      return null;
-    }
-
-    return user;
-  }
-
-  // ----------------------------------------------------------
-  // Recherche comptes
+  // Recherche utilisateurs
   // ----------------------------------------------------------
   function initSearch() {
-    const input = document.getElementById('searchAccounts');
-    const results = document.getElementById('accountsResults');
+    if (!dom.searchInput || !dom.results) return;
 
-    let timeout = null;
+    dom.searchInput.addEventListener('input', () => {
+      clearTimeout(searchTimeout);
 
-    if (!input || !results) return;
-
-    input.addEventListener('input', () => {
-      clearTimeout(timeout);
-
-      const q = input.value.trim();
+      const q = dom.searchInput.value.trim();
 
       if (q.length < 2) {
-        results.innerHTML = '';
+        dom.results.innerHTML = '';
         return;
       }
 
-      timeout = setTimeout(async () => {
-        const res = await window.API.employee.getAccounts({ q });
-
+      searchTimeout = setTimeout(async () => {
+        const res = await window.API.users.search(q);
         if (res.error) return;
 
-        results.innerHTML = '';
+        dom.results.innerHTML = '';
 
-        res.data.accounts.forEach(acc => {
+        (res.data.users || []).forEach((user) => {
           const div = document.createElement('div');
-          div.className = 'account-card';
+          div.className = 'user-item';
 
           div.innerHTML = `
-            <strong>${acc.username}</strong><br>
-            <small>${acc.iban}</small><br>
-            <span>${acc.balance / 100} €</span>
+            <strong>${user.username}</strong>
+            <small>${user.ibanMasked || ''}</small>
           `;
 
           div.addEventListener('click', () => {
-            selectedAccount = acc;
-            currentUserId = acc.userId;
+            currentUser = user;
 
-            loadAccountDetails();
+            if (dom.selectedUser) {
+              dom.selectedUser.textContent = user.username;
+            }
+
+            dom.results.innerHTML = '';
+            dom.searchInput.value = '';
+
+            loadTransactions();
           });
 
-          results.appendChild(div);
+          dom.results.appendChild(div);
         });
       }, 300);
     });
   }
 
   // ----------------------------------------------------------
-  // Détails compte
-  // ----------------------------------------------------------
-  async function loadAccountDetails() {
-    if (!currentUserId) return;
-
-    const res = await window.API.employee.getAccount(currentUserId);
-    if (res.error) return;
-
-    const acc = res.data.account;
-
-    document.getElementById('accountInfo').innerHTML = `
-      <h3>${acc.username}</h3>
-      <p>IBAN: ${acc.iban}</p>
-      <p>Solde: ${acc.balance / 100} €</p>
-      <p>Status: ${acc.isFrozen ? 'Gelé' : 'Actif'}</p>
-    `;
-
-    loadTransactions();
-  }
-
-  // ----------------------------------------------------------
-  // Transactions compte
+  // Transactions utilisateur
   // ----------------------------------------------------------
   async function loadTransactions() {
-    if (!currentUserId) return;
+    if (!currentUser) return;
 
-    const res = await window.API.employee.getTransactions(currentUserId, {
-      limit: 20,
+    const res = await window.API.employee.getTransactions(currentUser.id, {
+      limit: 10,
     });
 
-    if (res.error) return;
+    if (res.error || !dom.transactions) return;
 
-    const container = document.getElementById('accountTransactions');
-    if (!container) return;
+    dom.transactions.innerHTML = '';
 
-    container.innerHTML = '';
-
-    res.data.transactions.forEach(tx => {
+    (res.data.transactions || []).forEach((t) => {
       const div = document.createElement('div');
+      div.className = 'transaction-item';
 
       div.innerHTML = `
-        <div>${tx.type}</div>
-        <div>${tx.amount / 100} €</div>
-        <div>${new Date(tx.created_at).toLocaleString()}</div>
+        <div>
+          <strong>${t.description || 'Transaction'}</strong>
+          <small>${new Date(t.created_at).toLocaleString('fr-FR')}</small>
+        </div>
+        <div>
+          ${t.amount} €
+        </div>
       `;
 
-      container.appendChild(div);
+      dom.transactions.appendChild(div);
     });
   }
 
   // ----------------------------------------------------------
-  // Créditer compte
+  // Crédit compte
   // ----------------------------------------------------------
   function initCredit() {
-    const form = document.getElementById('creditForm');
-    if (!form) return;
+    if (!dom.creditForm) return;
 
-    form.addEventListener('submit', async e => {
+    dom.creditForm.addEventListener('submit', async (e) => {
       e.preventDefault();
 
-      if (!currentUserId) return;
+      if (!currentUser) return alert('Sélectionne un utilisateur');
 
-      const amount = parseFloat(form.amount.value);
-      const description = form.description.value;
+      const amount = Number(dom.creditForm.amount.value);
+      const description = dom.creditForm.description.value;
 
-      const res = await window.API.employee.credit(currentUserId, {
+      if (!amount || amount <= 0) return alert('Montant invalide');
+
+      const res = await window.API.employee.credit(currentUser.id, {
         amount: Math.round(amount * 100),
         description,
       });
@@ -155,26 +133,27 @@
       if (res.error) return alert(res.error);
 
       alert('Crédit effectué');
-      loadAccountDetails();
+      loadTransactions();
     });
   }
 
   // ----------------------------------------------------------
-  // Débiter compte
+  // Débit compte
   // ----------------------------------------------------------
   function initDebit() {
-    const form = document.getElementById('debitForm');
-    if (!form) return;
+    if (!dom.debitForm) return;
 
-    form.addEventListener('submit', async e => {
+    dom.debitForm.addEventListener('submit', async (e) => {
       e.preventDefault();
 
-      if (!currentUserId) return;
+      if (!currentUser) return alert('Sélectionne un utilisateur');
 
-      const amount = parseFloat(form.amount.value);
-      const description = form.description.value;
+      const amount = Number(dom.debitForm.amount.value);
+      const description = dom.debitForm.description.value;
 
-      const res = await window.API.employee.debit(currentUserId, {
+      if (!amount || amount <= 0) return alert('Montant invalide');
+
+      const res = await window.API.employee.debit(currentUser.id, {
         amount: Math.round(amount * 100),
         description,
       });
@@ -182,17 +161,14 @@
       if (res.error) return alert(res.error);
 
       alert('Débit effectué');
-      loadAccountDetails();
+      loadTransactions();
     });
   }
 
   // ----------------------------------------------------------
   // Init
   // ----------------------------------------------------------
-  document.addEventListener('DOMContentLoaded', async () => {
-    const user = await checkAccess();
-    if (!user) return;
-
+  document.addEventListener('DOMContentLoaded', () => {
     initSearch();
     initCredit();
     initDebit();
